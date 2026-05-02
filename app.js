@@ -2000,6 +2000,17 @@ if (isDrawingRectangle && rectStartPoint && finalPos) {
     }
 }
 
+// --- AKILLI TAHTA NOKTA KOYMA YAMASI ---
+    if (currentTool === 'pen' && isDrawing) {
+        const lastStroke = drawnStrokes[drawnStrokes.length - 1];
+        // Eğer kalemle sadece tek bir noktaya dokunulup çekildiyse (hareket yoksa)
+        if (lastStroke && lastStroke.type === 'pen' && lastStroke.path.length === 1) {
+            // Görünür olması için yanına hayali bir nokta daha ekle
+            const p = lastStroke.path[0];
+            lastStroke.path.push({ x: p.x + 0.1, y: p.y + 0.1 });
+        }
+    }
+
     // --- GENEL SIFIRLAMA ---
     isDrawing = false;
     isDrawingLine = isDrawingInfinityLine = isDrawingSegment = isDrawingRay = false;
