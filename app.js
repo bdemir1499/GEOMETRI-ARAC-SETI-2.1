@@ -447,6 +447,104 @@ function redrawAllStrokes() {
             }
         }
 
+// --- DİKDÖRTGENİ TAMAMLAMA VE SİSTEME KAYDETME (TEK NESNE MODU) ---
+if (isDrawingRectangle && rectStartPoint && finalPos) {
+    const widthPx = Math.abs(finalPos.x - rectStartPoint.x);
+    const heightPx = Math.abs(finalPos.y - rectStartPoint.y);
+
+    if (widthPx > 10 && heightPx > 10) {
+        const startX = Math.min(rectStartPoint.x, finalPos.x);
+        const startY = Math.min(rectStartPoint.y, finalPos.y);
+        const color = window.isToolThemeBlack ? '#000000' : (window.currentLineColor || '#000000');
+
+        // 4 köşe harfini bir diziye alıyoruz
+        const rectLabels = [nextPointChar];
+        for (let i = 0; i < 3; i++) {
+            nextPointChar = advanceChar(nextPointChar);
+            rectLabels.push(nextPointChar);
+        }
+        nextPointChar = advanceChar(nextPointChar); // Bir sonraki çizim için harfi hazırla
+
+        // ARTIK 4 AYRI SEGMENT DEĞİL, TEK BİR RECTANGLE KAYDEDİYORUZ
+        drawnStrokes.push({ 
+            type: 'rectangle', 
+            x: startX, 
+            y: startY, 
+            width: widthPx, 
+            height: heightPx, 
+            rotation: 0, 
+            color: color, 
+            labels: rectLabels,
+            showEdgeLabels: true, // CM değerlerini otomatik gösterir
+            showAngleLabels: false // Tıklayınca açılması için başlangıçta kapalı
+        });
+
+        window.nextPointChar = nextPointChar; 
+    }
+}
+
+else if (stroke.type === 'rectangle') {
+            ctx.save();
+            const centerX = stroke.x + stroke.width / 2;
+            const centerY = stroke.y + stroke.height / 2;
+            ctx.translate(centerX, centerY);
+            ctx.rotate((stroke.rotation || 0) * Math.PI / 180);
+
+            // 1. Dikdörtgeni Çiz
+            ctx.beginPath();
+            ctx.rect(-stroke.width / 2, -stroke.height / 2, stroke.width, stroke.height);
+            ctx.strokeStyle = stroke.color;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // 2. Kenar Uzunluklarını Yazdır (Önizlemedeki gibi kalıcı olur)
+            if (stroke.showEdgeLabels) {
+                ctx.font = "14px Arial";
+                ctx.fillStyle = stroke.color;
+                ctx.textAlign = "center";
+                
+                const wCm = (stroke.width / 30).toFixed(1).replace('.', ',');
+                const hCm = (stroke.height / 30).toFixed(1).replace('.', ',');
+
+                // Üst Kenar CM
+                ctx.fillText(`${wCm} cm`, 0, -stroke.height / 2 - 10);
+                
+                // Sol Kenar CM (Dikey yazdırmak için döndürüyoruz)
+                ctx.save();
+                ctx.translate(-stroke.width / 2 - 25, 0);
+                ctx.rotate(-Math.PI / 2);
+                ctx.fillText(`${hCm} cm`, 0, 0);
+                ctx.restore();
+            }
+
+            // 3. Köşe Harflerini Yazdır (A, B, C, D)
+            if (stroke.labels) {
+                ctx.font = "bold 16px Arial";
+                ctx.fillStyle = "#FF69B4"; // Pembe harfler
+                ctx.fillText(stroke.labels[0], -stroke.width/2 - 15, -stroke.height/2 - 5); // Sol Üst
+                ctx.fillText(stroke.labels[1], stroke.width/2 + 10, -stroke.height/2 - 5);  // Sağ Üst
+                ctx.fillText(stroke.labels[2], stroke.width/2 + 10, stroke.height/2 + 15);  // Sağ Alt
+                ctx.fillText(stroke.labels[3], -stroke.width/2 - 15, stroke.height/2 + 15); // Sol Alt
+            }
+
+            // 4. "Taşı" Modu Aktifse Butonları Çiz
+            if (currentTool === 'move' && selectedItem === stroke) {
+                // Döndürme (Yeşil)
+                ctx.fillStyle = '#0F0'; ctx.beginPath(); ctx.arc(0, -stroke.height/2 - 30, 12, 0, 7); ctx.fill();
+                // Boyutlandırma (Pembe)
+                ctx.fillStyle = '#F0F'; ctx.beginPath(); ctx.arc(stroke.width/2, stroke.height/2, 12, 0, 7); ctx.fill();
+            }
+            
+            // 5. Açı Tıklandıysa 90 Derece Sembolünü Çiz
+            if (stroke.showAngleLabels) {
+                ctx.font = "bold 14px Arial"; ctx.fillStyle = "yellow";
+                ctx.fillText("90°", -stroke.width/2 + 15, -stroke.height/2 + 20);
+            }
+            ctx.restore();
+        }
+
+
+
         // --- ÇEMBER / PERGEL ---
         else if (stroke.type === 'arc') { 
             const PI_RAD = Math.PI / 180;
@@ -622,7 +720,33 @@ window.PolygonTool.getRotateHandlePosition(stroke);
                     if (hitEdge) return { item: stroke, pointKey: 'toggle_edges' };
                 }
             }
-            if (stroke.type === 'arc' && stroke.cx) {
+
+if (stroke.type === 'rectangle') {
+            const centerX = stroke.x + stroke.width / 2;
+            const centerY = stroke.y + stroke.height / 2;
+            const angleRad = (stroke.rotation || 0) * (Math.PI / 180);
+
+            // A. Döndürme Butonu (Yeşil)
+            const rotX = centerX + Math.sin(angleRad) * (stroke.height / 2 + 30);
+            const rotY = centerY - Math.cos(angleRad) * (stroke.height / 2 + 30);
+            if (distance(pos, {x: rotX, y: rotY}) < 20) return { item: stroke, pointKey: 'image_rotate' };
+
+            // B. Boyutlandırma Butonu (Pembe)
+            const resX = centerX + (stroke.width / 2 * Math.cos(angleRad) - stroke.height / 2 * Math.sin(angleRad));
+            const resY = centerY + (stroke.width / 2 * Math.sin(angleRad) + stroke.height / 2 * Math.cos(angleRad));
+            if (distance(pos, {x: resX, y: resY}) < 20) return { item: stroke, pointKey: 'image_resize' };
+
+            // C. Köşeye Tıklama (Açı Gösterme)
+            if (distance(pos, {x: stroke.x, y: stroke.y}) < 20) return { item: stroke, pointKey: 'toggle_angles' };
+
+            // D. Gövdeden Tutma (Merkezden Taşıma)
+            const dx = pos.x - centerX; const dy = pos.y - centerY;
+            const localX = dx * Math.cos(-angleRad) - dy * Math.sin(-angleRad);
+            const localY = dx * Math.sin(-angleRad) + dy * Math.cos(-angleRad);
+            if (Math.abs(localX) < stroke.width / 2 && Math.abs(localY) < stroke.height / 2) {
+                return { item: stroke, pointKey: 'self' };
+            }
+        }            if (stroke.type === 'arc' && stroke.cx) {
                 const distToCenter = distance(pos, {x: stroke.cx, y: stroke.cy});
                 if (Math.abs(distToCenter - stroke.radius) < SNAP_THRESHOLD) return { item: stroke, pointKey: 'toggle_circle_info' };
             }
@@ -1576,6 +1700,9 @@ canvas.addEventListener('pointermove', (e) => {
                     if (distance({x: stroke.p1.x + (stroke.p2.x - stroke.p1.x) * t, y: stroke.p1.y + (stroke.p2.y - stroke.p1.y) * t}, pos) < 15) { touched = true; break; }
                 }
             }
+
+
+
             // 3. Çember ve Pergel Çizimleri
             else if (stroke.type === 'arc') {
                 const distToCenter = distance(pos, {x: stroke.cx, y: stroke.cy});
@@ -1614,6 +1741,31 @@ canvas.addEventListener('pointermove', (e) => {
                     touched = true;
                 }
             }
+
+
+// 6. Dikdörtgenleri Sil
+            else if (stroke.type === 'rectangle') {
+                const centerX = stroke.x + stroke.width / 2;
+                const centerY = stroke.y + stroke.height / 2;
+                const dx = pos.x - centerX;
+                const dy = pos.y - centerY;
+                const angleRad = (stroke.rotation || 0) * (Math.PI / 180);
+                
+                // Fare konumunu dikdörtgenin açısına göre yerelleştir (Döndürülmüş dikdörtgeni de siler)
+                const localX = dx * Math.cos(-angleRad) - dy * Math.sin(-angleRad);
+                const localY = dx * Math.sin(-angleRad) + dy * Math.cos(-angleRad);
+                
+                const halfW = stroke.width / 2;
+                const halfH = stroke.height / 2;
+
+                // Silgi kenarlara veya merkeze 15 piksel yaklaştıysa sil
+                const nearEdge = (Math.abs(Math.abs(localX) - halfW) < 15 && Math.abs(localY) < halfH + 15) ||
+                                 (Math.abs(Math.abs(localY) - halfH) < 15 && Math.abs(localX) < halfW + 15);
+                const nearCenter = Math.abs(localX) < 20 && Math.abs(localY) < 20;
+
+                if (nearEdge || nearCenter) touched = true;
+            }
+
 
             if (touched) needsRedraw = true; 
             else strokesToKeep.push(stroke);
@@ -1748,36 +1900,41 @@ canvas.addEventListener('pointerup', (e) => {
     }
 
 
-    // --- DİKDÖRTGENİ TAMAMLAMA VE SİSTEME KAYDETME ---
-    if (isDrawingRectangle && rectStartPoint && finalPos) {
-        const widthPx = Math.abs(finalPos.x - rectStartPoint.x);
-        const heightPx = Math.abs(finalPos.y - rectStartPoint.y);
+    // --- DİKDÖRTGENİ TAMAMLAMA VE SİSTEME KAYDETME (TEK NESNE MODU) ---
+if (isDrawingRectangle && rectStartPoint && finalPos) {
+    const widthPx = Math.abs(finalPos.x - rectStartPoint.x);
+    const heightPx = Math.abs(finalPos.y - rectStartPoint.y);
 
-        if (widthPx > 10 && heightPx > 10) {
-            const widthCm = (widthPx / 30).toFixed(1).replace('.', ',') + " cm";
-            const heightCm = (heightPx / 30).toFixed(1).replace('.', ',') + " cm";
+    if (widthPx > 10 && heightPx > 10) {
+        const startX = Math.min(rectStartPoint.x, finalPos.x);
+        const startY = Math.min(rectStartPoint.y, finalPos.y);
+        const color = window.isToolThemeBlack ? '#000000' : (window.currentLineColor || '#000000');
 
-            const p1 = { x: Math.min(rectStartPoint.x, finalPos.x), y: Math.min(rectStartPoint.y, finalPos.y) }; 
-            const p2 = { x: Math.max(rectStartPoint.x, finalPos.x), y: Math.min(rectStartPoint.y, finalPos.y) }; 
-            const p3 = { x: Math.max(rectStartPoint.x, finalPos.x), y: Math.max(rectStartPoint.y, finalPos.y) }; 
-            const p4 = { x: Math.min(rectStartPoint.x, finalPos.x), y: Math.max(rectStartPoint.y, finalPos.y) }; 
-
-            const color = window.isToolThemeBlack ? '#000000' : (window.currentLineColor || '#000000');
-
-            const labelA = nextPointChar; nextPointChar = advanceChar(nextPointChar);
-            const labelB = nextPointChar; nextPointChar = advanceChar(nextPointChar);
-            const labelC = nextPointChar; nextPointChar = advanceChar(nextPointChar);
-            const labelD = nextPointChar; nextPointChar = advanceChar(nextPointChar);
-
-            // SADECE BU 4 SATIRDAKİ null YAZILARINI SİLDİK VE "" YAPTIK
-            drawnStrokes.push({ type: 'segment', p1: p1, p2: p2, color: color, width: 3, label1: labelA, label2: labelB, lengthLabel: widthCm, lengthLabelPos: {x: (p1.x+p2.x)/2, y: p1.y} }); 
-            drawnStrokes.push({ type: 'segment', p1: p2, p2: p3, color: color, width: 3, label1: "", label2: labelC, lengthLabel: heightCm, lengthLabelPos: {x: p2.x, y: (p2.y+p3.y)/2} }); 
-            drawnStrokes.push({ type: 'segment', p1: p3, p2: p4, color: color, width: 3, label1: "", label2: labelD, lengthLabel: widthCm, lengthLabelPos: {x: (p3.x+p4.x)/2, y: p3.y} }); 
-            drawnStrokes.push({ type: 'segment', p1: p4, p2: p1, color: color, width: 3, label1: "", label2: "", lengthLabel: heightCm, lengthLabelPos: {x: p4.x, y: (p4.y+p1.y)/2} });
-
-            window.nextPointChar = nextPointChar; 
+        // 4 köşe harfini bir diziye alıyoruz
+        const rectLabels = [nextPointChar];
+        for (let i = 0; i < 3; i++) {
+            nextPointChar = advanceChar(nextPointChar);
+            rectLabels.push(nextPointChar);
         }
+        nextPointChar = advanceChar(nextPointChar); // Bir sonraki çizim için harfi hazırla
+
+        // ARTIK 4 AYRI SEGMENT DEĞİL, TEK BİR RECTANGLE KAYDEDİYORUZ
+        drawnStrokes.push({ 
+            type: 'rectangle', 
+            x: startX, 
+            y: startY, 
+            width: widthPx, 
+            height: heightPx, 
+            rotation: 0, 
+            color: color, 
+            labels: rectLabels,
+            showEdgeLabels: true, // CM değerlerini otomatik gösterir
+            showAngleLabels: false // Tıklayınca açılması için başlangıçta kapalı
+        });
+
+        window.nextPointChar = nextPointChar; 
     }
+}
 
     // --- GENEL SIFIRLAMA ---
     isDrawing = false;
