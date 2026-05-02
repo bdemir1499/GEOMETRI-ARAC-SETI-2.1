@@ -857,6 +857,10 @@ function setActiveTool(tool) {
     isDrawingInfinityLine = false; 
     isDrawingSegment = false; 
     isDrawingRay = false; 
+
+// --- BURAYA DİKDÖRTGEN SIFIRLAMASINI EKLEYİN ---
+    isDrawingRectangle = false;
+    rectStartPoint = null;
     
     window.tempPolygonData = null; 
     polygonPreviewLabel.classList.add('hidden'); 
@@ -1418,12 +1422,11 @@ canvas.addEventListener('pointerdown', (e) => {
             break;
 
 case 'draw_rectangle':
-            if (!isDrawingRectangle) { 
-                isDrawingRectangle = true; 
-                rectStartPoint = pos; 
-            }
-            break;
-
+    // Eskiden: if (!isDrawingRectangle) { ... } vardı
+    // Yenisi: Her tıklandığında başlangıç noktasını kesin olarak kaydet
+    isDrawingRectangle = true; 
+    rectStartPoint = pos; 
+    break;
 
         case 'draw_polygon_circle':
         case 'draw_polygon_3_sides':
