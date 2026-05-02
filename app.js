@@ -1324,6 +1324,13 @@ canvas.addEventListener('pointerdown', (e) => {
                 originalStartPos = { x: (hit.item.cx || hit.item.center.x), y: (hit.item.cy || hit.item.center.y) };
             } else if (hit.pointKey === 'rotate' || hit.pointKey === 'resize' || hit.pointKey === 'image_resize') {
                 originalStartPos = { radius: hit.item.radius, rotation: hit.item.rotation };
+
+// --- TABLET İÇİN KRİTİK EKLEME ---
+                if (selectedItem.type === 'rectangle') {
+                    initialWidth = selectedItem.width;
+                    initialHeight = selectedItem.height;
+                }
+                // --------------------------------
                 
                 // --- KRİTİK EKLEME: Dikdörtgen boyutlarını kaydet ---
                 if (hit.item.type === 'rectangle') {
