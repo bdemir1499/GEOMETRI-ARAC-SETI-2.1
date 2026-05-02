@@ -7,6 +7,8 @@ let offsetX = 0; // BUNU EKLE
 let offsetY = 0; // BUNU EKLE
 const MIN_SCALE = 0.5; 
 const MAX_SCALE = 5.0;
+let initialWidth = 0;
+let initialHeight = 0;
 
 
 // Sayfa açıldığında kırmızı butonun yanlışlıkla görünmesini engellemek için:
@@ -1320,8 +1322,15 @@ canvas.addEventListener('pointerdown', (e) => {
                 originalStartPos = { x: hit.item.p2.x, y: hit.item.p2.y };
             } else if (hit.pointKey === 'center') {
                 originalStartPos = { x: (hit.item.cx || hit.item.center.x), y: (hit.item.cy || hit.item.center.y) };
-            } else if (hit.pointKey === 'rotate' || hit.pointKey === 'resize') {
+            } else if (hit.pointKey === 'rotate' || hit.pointKey === 'resize' || hit.pointKey === 'image_resize') {
                 originalStartPos = { radius: hit.item.radius, rotation: hit.item.rotation };
+                
+                // --- KRİTİK EKLEME: Dikdörtgen boyutlarını kaydet ---
+                if (hit.item.type === 'rectangle') {
+                    initialWidth = hit.item.width;
+                    initialHeight = hit.item.height;
+                }
+                // --------------------------------------------------
             }
             
             const itemType = hit.item.type;
@@ -1477,9 +1486,28 @@ canvas.addEventListener('pointermove', (e) => {
                 selectedItem.rotation = Math.atan2(pos.y - centerY, pos.x - centerX) * (180 / Math.PI) + 90;
             } 
             else if (selectedPointKey === 'image_resize') {
-                // Orantılı büyütme
-                selectedItem.width = Math.max(30, initialWidth + dx * 2);
-                selectedItem.height = Math.max(30, initialHeight + dy * 2);
+                const centerX = selectedItem.x + selectedItem.width / 2;
+                const centerY = selectedItem.y + selectedItem.height / 2;
+                const angleRad = (selectedItem.rotation || 0) * (Math.PI / 180);
+
+                // Farenin merkeze göre olan uzaklığını bul
+                const dx_real = pos.x - centerX;
+                const dy_real = pos.y - centerY;
+
+                // Bu uzaklığı dikdörtgenin açısına göre döndür (Yerel X ve Y)
+                const localX = dx_real * Math.cos(-angleRad) - dy_real * Math.sin(-angleRad);
+                const localY = dx_real * Math.sin(-angleRad) + dy_real * Math.cos(-angleRad);
+
+                // Yeni genişlik ve yüksekliği, farenin merkezden uzaklığının tam 2 katı yap
+                // Böylece pembe buton tam mouse ucunda kalır
+                const newW = Math.max(40, Math.abs(localX) * 2);
+                const newH = Math.max(40, Math.abs(localY) * 2);
+
+                // Sol üst köşeyi (x, y) merkez sabit kalacak şekilde güncelle
+                selectedItem.x = centerX - (newW / 2);
+                selectedItem.y = centerY - (newH / 2);
+                selectedItem.width = newW;
+                selectedItem.height = newH;
             }
         }
 
