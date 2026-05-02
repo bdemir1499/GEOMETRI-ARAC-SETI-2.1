@@ -1,3 +1,5 @@
+let isDrawingRectangle = false;
+let rectStartPoint = null;
 let globalScale = 1;
 let lastDist = 0;
 let pointers = new Map();
@@ -152,6 +154,19 @@ const aciolcerButton = document.getElementById('btn-aciolcer');
 const pergelButton = document.getElementById('btn-pergel');
 const polygonButton = document.getElementById('btn-cokgenler');
 const oyunlarButton = document.getElementById('btn-oyunlar');
+// --- DİKDÖRTGEN BUTONU TANIMLAMASI ---
+const dikdortgenButton = document.getElementById('btn-dikdortgen');
+
+if (dikdortgenButton) {
+    dikdortgenButton.addEventListener('click', () => {
+        if (typeof window.setActiveTool === 'function') {
+            window.setActiveTool('draw_rectangle');
+        } else {
+            window.currentTool = 'draw_rectangle';
+        }
+    });
+}
+// --------------------------------------
 
 // 2. Alt Menü Butonları ve Seçenekler
 const penOptions = document.getElementById('pen-options');
@@ -1265,6 +1280,15 @@ canvas.addEventListener('pointerdown', (e) => {
         case 'ray':
             if (!isDrawingRay) { isDrawingRay = true; lineStartPoint = pos; }
             break;
+
+case 'draw_rectangle':
+            if (!isDrawingRectangle) { 
+                isDrawingRectangle = true; 
+                rectStartPoint = pos; 
+            }
+            break;
+
+
         case 'draw_polygon_circle':
         case 'draw_polygon_3_sides':
         case 'draw_polygon_4_sides':
@@ -1458,6 +1482,47 @@ canvas.addEventListener('pointermove', (e) => {
         ctx.globalAlpha = 1.0; ctx.setLineDash([]);
         previewActive = true;
     }
+
+
+// --- DİKDÖRTGEN CANLI ÇİZİM VE ANLIK CM ÖNİZLEMESİ ---
+    else if (isDrawingRectangle && rectStartPoint) {
+        redrawAllStrokes(); // Eski çizimleri koru
+
+        // Mıknatıs (snap) uyumlu canlı koordinatlar
+        const widthPx = Math.abs(endPos.x - rectStartPoint.x);
+        const heightPx = Math.abs(endPos.y - rectStartPoint.y);
+
+        const widthCm = (widthPx / 30).toFixed(1).replace('.', ',');
+        const heightCm = (heightPx / 30).toFixed(1).replace('.', ',');
+
+        const startX = Math.min(rectStartPoint.x, endPos.x);
+        const startY = Math.min(rectStartPoint.y, endPos.y);
+
+        // Kesikli ve şeffaf önizleme çizgisi (Şov kısmı)
+        ctx.globalAlpha = 0.6; 
+        ctx.setLineDash([8, 4]);
+
+        ctx.beginPath();
+        ctx.rect(startX, startY, widthPx, heightPx);
+        ctx.strokeStyle = window.currentLineColor || '#000000';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+
+        // Çizgileri normale döndür
+        ctx.globalAlpha = 1.0; 
+        ctx.setLineDash([]);
+
+        // Anlık CM Etiketlerini Yazdır
+        ctx.font = "16px Arial";
+        ctx.fillStyle = window.currentLineColor || '#000000';
+        ctx.textAlign = "center";
+        ctx.fillText(`${widthCm} cm`, startX + (widthPx / 2), startY - 10); 
+        ctx.textAlign = "right";
+        ctx.fillText(`${heightCm} cm`, startX - 10, startY + (heightPx / 2) + 5); 
+
+        previewActive = true; // SİHRİ GERİ GETİREN KİLİT BURASI!
+    }
+
     // E. Çokgen ve Çember Önizleme
     else if (window.tempPolygonData && window.tempPolygonData.center) {
         const center = window.tempPolygonData.center;
@@ -1643,6 +1708,9 @@ canvas.addEventListener('pointerup', (e) => {
         if (isDrawingLine) {
             drawnStrokes.push({ type: 'straightLine', p1: lineStartPoint, p2: finalPos, color: currentLineColor, width: 3 });
         }
+
+
+
         else if (isDrawingInfinityLine) {
             const l1 = nextPointChar; const l2 = advanceChar(l1); nextPointChar = advanceChar(l2);
             drawnStrokes.push({ type: 'line', p1: lineStartPoint, p2: finalPos, color: currentLineColor, width: 3, label1: l1, label2: l2 });
@@ -1712,13 +1780,47 @@ canvas.addEventListener('pointerup', (e) => {
     }
 
 
+    // --- DİKDÖRTGENİ TAMAMLAMA VE SİSTEME KAYDETME ---
+    if (isDrawingRectangle && rectStartPoint && finalPos) {
+        const widthPx = Math.abs(finalPos.x - rectStartPoint.x);
+        const heightPx = Math.abs(finalPos.y - rectStartPoint.y);
+
+        if (widthPx > 10 && heightPx > 10) {
+            const widthCm = (widthPx / 30).toFixed(1).replace('.', ',') + " cm";
+            const heightCm = (heightPx / 30).toFixed(1).replace('.', ',') + " cm";
+
+            const p1 = { x: Math.min(rectStartPoint.x, finalPos.x), y: Math.min(rectStartPoint.y, finalPos.y) }; 
+            const p2 = { x: Math.max(rectStartPoint.x, finalPos.x), y: Math.min(rectStartPoint.y, finalPos.y) }; 
+            const p3 = { x: Math.max(rectStartPoint.x, finalPos.x), y: Math.max(rectStartPoint.y, finalPos.y) }; 
+            const p4 = { x: Math.min(rectStartPoint.x, finalPos.x), y: Math.max(rectStartPoint.y, finalPos.y) }; 
+
+            const color = window.isToolThemeBlack ? '#000000' : (window.currentLineColor || '#000000');
+
+            const labelA = nextPointChar; nextPointChar = advanceChar(nextPointChar);
+            const labelB = nextPointChar; nextPointChar = advanceChar(nextPointChar);
+            const labelC = nextPointChar; nextPointChar = advanceChar(nextPointChar);
+            const labelD = nextPointChar; nextPointChar = advanceChar(nextPointChar);
+
+            // SADECE BU 4 SATIRDAKİ null YAZILARINI SİLDİK VE "" YAPTIK
+            drawnStrokes.push({ type: 'segment', p1: p1, p2: p2, color: color, width: 3, label1: labelA, label2: labelB, lengthLabel: widthCm, lengthLabelPos: {x: (p1.x+p2.x)/2, y: p1.y} }); 
+            drawnStrokes.push({ type: 'segment', p1: p2, p2: p3, color: color, width: 3, label1: "", label2: labelC, lengthLabel: heightCm, lengthLabelPos: {x: p2.x, y: (p2.y+p3.y)/2} }); 
+            drawnStrokes.push({ type: 'segment', p1: p3, p2: p4, color: color, width: 3, label1: "", label2: labelD, lengthLabel: widthCm, lengthLabelPos: {x: (p3.x+p4.x)/2, y: p3.y} }); 
+            drawnStrokes.push({ type: 'segment', p1: p4, p2: p1, color: color, width: 3, label1: "", label2: "", lengthLabel: heightCm, lengthLabelPos: {x: p4.x, y: (p4.y+p1.y)/2} });
+
+            window.nextPointChar = nextPointChar; 
+        }
+    }
+
     // --- GENEL SIFIRLAMA ---
     isDrawing = false;
     isDrawingLine = isDrawingInfinityLine = isDrawingSegment = isDrawingRay = false;
+    isDrawingRectangle = false; // Takılı kalmayı kökten çözen kilit!
     lineStartPoint = null;
+    rectStartPoint = null;      // Hafızayı temizle
     snapTarget = null;
-    if (typeof snapIndicator !== 'undefined' && snapIndicator) snapIndicator.style.display = 'none';
     
+    if (typeof snapIndicator !== 'undefined' && snapIndicator) snapIndicator.style.display = 'none';
+
     redrawAllStrokes();
 
 }, { passive: false });
