@@ -699,6 +699,43 @@ window.PolygonTool.getRotateHandlePosition(stroke);
                 }
             }
         }
+
+// --- DİKDÖRTGEN YAKALAMA (TABLET UYUMLU) ---
+        if (stroke.type === 'rectangle') {
+            const centerX = stroke.x + stroke.width / 2;
+            const centerY = stroke.y + stroke.height / 2;
+            const angleRad = (stroke.rotation || 0) * (Math.PI / 180);
+
+            // A. Döndürme Butonu (Yeşil - Üstte)
+            const rotX = centerX + Math.sin(angleRad) * (stroke.height / 2 + 35);
+            const rotY = centerY - Math.cos(angleRad) * (stroke.height / 2 + 35);
+            if (distance(pos, {x: rotX, y: rotY}) < 30) return { item: stroke, pointKey: 'image_rotate' };
+
+            // B. Boyutlandırma Butonu (Pembe - Sağ Alt)
+            const resX = centerX + (stroke.width / 2 * Math.cos(angleRad) - stroke.height / 2 * Math.sin(angleRad));
+            const resY = centerY + (stroke.width / 2 * Math.sin(angleRad) + stroke.height / 2 * Math.cos(angleRad));
+            if (distance(pos, {x: resX, y: resY}) < 30) return { item: stroke, pointKey: 'image_resize' };
+
+            // C. Köşeler (90 Derece Açı Gösterme - 30px hassasiyet)
+            const corners = [
+                {x: -stroke.width/2, y: -stroke.height/2}, {x: stroke.width/2, y: -stroke.height/2},
+                {x: stroke.width/2, y: stroke.height/2}, {x: -stroke.width/2, y: stroke.height/2}
+            ];
+            for (let c of corners) {
+                const cornerX = centerX + (c.x * Math.cos(angleRad) - c.y * Math.sin(angleRad));
+                const cornerY = centerY + (c.x * Math.sin(angleRad) + c.y * Math.cos(angleRad));
+                if (distance(pos, {x: cornerX, y: cornerY}) < 30) return { item: stroke, pointKey: 'toggle_angles' };
+            }
+
+            // D. Gövde (Merkezden Taşıma)
+            const dx = pos.x - centerX;
+            const dy = pos.y - centerY;
+            const localX = dx * Math.cos(-angleRad) - dy * Math.sin(-angleRad);
+            const localY = dx * Math.sin(-angleRad) + dy * Math.cos(-angleRad);
+            if (Math.abs(localX) < stroke.width / 2 && Math.abs(localY) < stroke.height / 2) {
+                return { item: stroke, pointKey: 'self' };
+            }
+        }
         
         if (currentTool === 'move' || currentTool === 'fill') { // Fill için de hit gerekli
             if (stroke.type === 'polygon' && stroke.vertices) {
@@ -1287,6 +1324,13 @@ canvas.addEventListener('pointerdown', (e) => {
         const hit = findHit(pos); 
         
         if (hit) {
+
+// Seçilen nesneyi en üste taşı (Z-Index mantığı)
+        drawnStrokes = drawnStrokes.filter(s => s !== hit.item);
+        drawnStrokes.push(hit.item);
+        window.drawnStrokes = drawnStrokes;
+
+
             // Etiket Aç/Kapat Mantığı (Burası aynı kalıyor)
             if (hit.pointKey === 'toggle_edges') { hit.item.showEdgeLabels = !hit.item.showEdgeLabels; redrawAllStrokes(); return; }
             if (hit.pointKey === 'toggle_angles') { hit.item.showAngleLabels = !hit.item.showAngleLabels; redrawAllStrokes(); return; }
@@ -1453,6 +1497,25 @@ canvas.addEventListener('pointermove', (e) => {
     if (currentTool === 'move' && isMoving) {
         const dx = pos.x - dragStartPos.x;
         const dy = pos.y - dragStartPos.y;
+
+// --- DİKDÖRTGEN HAREKET MANTIĞI ---
+        if (selectedItem.type === 'rectangle') {
+            if (selectedPointKey === 'self') {
+                selectedItem.x = originalStartPos.x + dx;
+                selectedItem.y = originalStartPos.y + dy;
+            } 
+            else if (selectedPointKey === 'image_rotate') {
+                const centerX = selectedItem.x + selectedItem.width / 2;
+                const centerY = selectedItem.y + selectedItem.height / 2;
+                selectedItem.rotation = Math.atan2(pos.y - centerY, pos.x - centerX) * (180 / Math.PI) + 90;
+            } 
+            else if (selectedPointKey === 'image_resize') {
+                // Orantılı büyütme
+                selectedItem.width = Math.max(30, initialWidth + dx * 2);
+                selectedItem.height = Math.max(30, initialHeight + dy * 2);
+            }
+        }
+
         
        // A. Resim Boyutlandırma (Resize)
         if (selectedPointKey === 'image_resize') {
