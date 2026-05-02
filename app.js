@@ -447,41 +447,6 @@ function redrawAllStrokes() {
             }
         }
 
-// --- DİKDÖRTGENİ TAMAMLAMA VE SİSTEME KAYDETME (TEK NESNE MODU) ---
-if (isDrawingRectangle && rectStartPoint && finalPos) {
-    const widthPx = Math.abs(finalPos.x - rectStartPoint.x);
-    const heightPx = Math.abs(finalPos.y - rectStartPoint.y);
-
-    if (widthPx > 10 && heightPx > 10) {
-        const startX = Math.min(rectStartPoint.x, finalPos.x);
-        const startY = Math.min(rectStartPoint.y, finalPos.y);
-        const color = window.isToolThemeBlack ? '#000000' : (window.currentLineColor || '#000000');
-
-        // 4 köşe harfini bir diziye alıyoruz
-        const rectLabels = [nextPointChar];
-        for (let i = 0; i < 3; i++) {
-            nextPointChar = advanceChar(nextPointChar);
-            rectLabels.push(nextPointChar);
-        }
-        nextPointChar = advanceChar(nextPointChar); // Bir sonraki çizim için harfi hazırla
-
-        // ARTIK 4 AYRI SEGMENT DEĞİL, TEK BİR RECTANGLE KAYDEDİYORUZ
-        drawnStrokes.push({ 
-            type: 'rectangle', 
-            x: startX, 
-            y: startY, 
-            width: widthPx, 
-            height: heightPx, 
-            rotation: 0, 
-            color: color, 
-            labels: rectLabels,
-            showEdgeLabels: true, // CM değerlerini otomatik gösterir
-            showAngleLabels: false // Tıklayınca açılması için başlangıçta kapalı
-        });
-
-        window.nextPointChar = nextPointChar; 
-    }
-}
 
 else if (stroke.type === 'rectangle') {
             ctx.save();
@@ -1422,11 +1387,10 @@ canvas.addEventListener('pointerdown', (e) => {
             break;
 
 case 'draw_rectangle':
-    // Eskiden: if (!isDrawingRectangle) { ... } vardı
-    // Yenisi: Her tıklandığında başlangıç noktasını kesin olarak kaydet
-    isDrawingRectangle = true; 
-    rectStartPoint = pos; 
-    break;
+            // Şartı (!isDrawingRectangle) kaldırıyoruz; direkt başlatıyoruz.
+            isDrawingRectangle = true; 
+            rectStartPoint = pos; 
+            break;
 
         case 'draw_polygon_circle':
         case 'draw_polygon_3_sides':
@@ -1845,8 +1809,7 @@ canvas.addEventListener('pointermove', (e) => {
     }
 }, { passive: false });
 
-// --- app.js içindeki 'pointerup' olayının nihai ve zıplamayan hali ---
-// --- app.js içindeki 'pointerup' olayının nihai ve zıplamayan tam hali ---
+
 canvas.addEventListener('pointerup', (e) => {
     // 1. Tarayıcı kilitlerini kaldır ve standart hareketleri engelle
     canvas.releasePointerCapture(e.pointerId);
@@ -2050,6 +2013,8 @@ canvas.addEventListener('pointercancel', (e) => {
     isDrawing = false;
     isMoving = false;
     isPinching = false; // Varsa zoom işlemini de durdur
+isDrawingRectangle = false; 
+    rectStartPoint = null;
     
     // Geçici verileri temizle
     snapshotStart = null;
