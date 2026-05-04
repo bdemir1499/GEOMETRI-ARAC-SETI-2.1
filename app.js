@@ -9,6 +9,8 @@ const MIN_SCALE = 0.5;
 const MAX_SCALE = 5.0;
 let initialWidth = 0;
 let initialHeight = 0;
+let isPenActive = false; // Avuç içi reddi için
+let penActiveTimer = null;
 
 
 // Sayfa açıldığında kırmızı butonun yanlışlıkla görünmesini engellemek için:
@@ -34,16 +36,65 @@ function getGlobalCoordinates(e) {
 
 function getPointerPos(e) {
     const rect = canvas.getBoundingClientRect();
+    let cX = e.clientX;
+    let cY = e.clientY;
+
+    // Eğer koordinat bozuk (NaN) veya tanımsız (undefined) gelirse Touch verilerinden zorla çek
+    if (cX === undefined || cX === null || isNaN(cX)) {
+        if (e.targetTouches && e.targetTouches.length > 0) {
+            cX = e.targetTouches[0].clientX;
+            cY = e.targetTouches[0].clientY;
+        } else if (e.touches && e.touches.length > 0) {
+            cX = e.touches[0].clientX;
+            cY = e.touches[0].clientY;
+        } else if (e.changedTouches && e.changedTouches.length > 0) {
+            cX = e.changedTouches[0].clientX;
+            cY = e.changedTouches[0].clientY;
+        } else {
+            cX = 0; // Sistemin çökmesini engellemek için son çare
+            cY = 0;
+        }
+    }
+
     return {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top
+        // Hata durumunda NaN üretmesini engelleyen ekstra güvenlik (|| 0)
+        x: (cX || 0) - rect.left,
+        y: (cY || 0) - rect.top
     };
 }
+
+
+// --- GRAFİK TABLET SİMÜLATÖRÜ ---
+function getPointerInfo(e) {
+    // BURAYI false YAPTIK!
+    const testModuAcik = false; 
+
+    // Eğer test modu açıksa ve fare kullanılıyorsa, onu "Kalem" gibi kandır
+    if (testModuAcik && e.pointerType === 'mouse') {
+        return {
+            type: 'pen',
+            pressure: Math.random() * 0.8 + 0.2
+        };
+    }
+    
+    return {
+        type: e.pointerType,
+        pressure: e.pressure || 1 
+    };
+}
+
 
 // --- KANVAS AYARLARI ---
 
 const canvas = document.getElementById('drawing-canvas');
 const ctx = canvas.getContext('2d');
+
+// PARDUS KESİN ÇÖZÜM: Tarayıcının kaydırma ve yakınlaştırma yapmasını yasakla
+canvas.style.touchAction = 'none';
+canvas.style.userSelect = 'none';
+document.body.style.overscrollBehavior = 'none';
+
+
 // --- RESİM YÜKLEME DEĞİŞKENLERİ ---
 let backgroundImage = null; // Yüklenen resmi tutacak değişken
 const uploadButton = document.getElementById('btn-upload');
@@ -275,28 +326,41 @@ function redrawAllStrokes() {
     // (Buradaki translate ve scale satırlarını tamamen sildik. Zemin artık sabit!)
 
     // 3. NESNELERİ ÇİZ (For döngüsü başlıyor)
-    for (const stroke of drawnStrokes) {        
-        // --- KALEM (PEN) ---
+    for (const stroke of drawnStrokes) {
+
+        
+               // --- KALEM (PEN) GRAFİK TABLET DESTEKLİ ---
         if (stroke.type === 'pen') {
-            ctx.beginPath();
             const points = stroke.path;
-            if (points.length < 3) {
-                ctx.moveTo(points[0].x, points[0].y);
-                for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
+            
+            if (points.length < 2) {
+                // Sadece tıklandıysa tek bir nokta koy
+                ctx.beginPath();
+                ctx.arc(points[0].x, points[0].y, (stroke.baseWidth * (points[0].p || 1)) / 2, 0, Math.PI * 2);
+                ctx.fillStyle = stroke.color;
+                ctx.fill();
             } else {
-                ctx.moveTo(points[0].x, points[0].y);
-                for (let i = 1; i < points.length - 2; i++) {
-                    const xc = (points[i].x + points[i + 1].x) / 2;
-                    const yc = (points[i].y + points[i + 1].y) / 2;
-                    ctx.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
+                // Çizgiyi basınç hassasiyetiyle çiz
+                for (let i = 1; i < points.length; i++) {
+                    ctx.beginPath();
+                    ctx.moveTo(points[i - 1].x, points[i - 1].y);
+                    ctx.lineTo(points[i].x, points[i].y);
+                    ctx.strokeStyle = stroke.color;
+                    
+                    // Basıncı genişliğe uygula (En az %20 kalınlık olsun ki çizgi kopmasın)
+                    let currentPressure = points[i].p !== undefined ? points[i].p : 1;
+                    
+                    // Tabletler bazen çok düşük basınç gönderir, alt sınır koyuyoruz
+                    let dynamicWidth = stroke.baseWidth * Math.max(0.2, currentPressure);
+                    
+                    ctx.lineWidth = dynamicWidth;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    ctx.stroke();
                 }
-                ctx.quadraticCurveTo(points[points.length-2].x, points[points.length-2].y, points[points.length-1].x, points[points.length-1].y);
             }
-            ctx.strokeStyle = stroke.color;
-            ctx.lineWidth = stroke.width;
-            ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-            ctx.stroke();
         }
+
 
        // --- RESİM / PDF VE CANLANDIR (SNAPSHOT) KOPYASI ---
         else if (stroke.type === 'image') {
@@ -1258,11 +1322,12 @@ if (animateButton) {
 // --- MOUSE OLAYLARI ---
 
 canvas.addEventListener('pointerdown', (e) => {
-    // 1. Tarayıcıyı sabitle
-    if (e.pointerType === 'touch') e.preventDefault();
-    canvas.setPointerCapture(e.pointerId);
 
-// --- KRİTİK EKLENTİ: HAYALET PARMAK SIFIRLAYICI ---
+    // 1. Tarayıcıyı sabitle
+    if (e.cancelable) e.preventDefault();
+    // NOT: setPointerCapture komutu Vestel tahtaları kilitlediği için tamamen kaldırıldı.
+
+    // --- KRİTİK EKLENTİ: HAYALET PARMAK SIFIRLAYICI ---
     // Eğer dokunmatik ekrandaysak ve ekrana sadece 1 parmak değiyorsa,
     // hafızada kalmış eski görünmez parmakları tamamen temizle!
     if (e.pointerType === 'touch' && e.touches && e.touches.length === 1) {
@@ -1270,7 +1335,23 @@ canvas.addEventListener('pointerdown', (e) => {
         lastDist = 0;
     }
 
-// --- BUNU EKLE: Parmağı ekrana değdiği an kaydet ---
+    // --- PARDUS ÇİFT SİNYAL (HAYALET FARE) ENGELLEYİCİ ---
+    if (e.pointerType === 'touch') {
+        // Gerçek parmak değdiyse, sistemdeki sahte fareleri sil
+        for (let key of pointers.keys()) {
+            if (pointers.get(key).pointerType === 'mouse') pointers.delete(key);
+        }
+    } else if (e.pointerType === 'mouse') {
+        // Fare sinyali geldiyse ama ekranda parmak varsa, fareyi reddet!
+        let hasTouch = false;
+        for (let p of pointers.values()) {
+            if (p.pointerType === 'touch' || p.pointerType === 'pen') hasTouch = true;
+        }
+        if (hasTouch) return; // İşlemi iptal et, hayalet fareyi içeri alma
+    }
+    // ----------------------------------------------------
+
+    // --- BUNU EKLE: Parmağı ekrana değdiği an kaydet ---
     pointers.set(e.pointerId, e); 
     // ------------------------------------------------
 
@@ -1278,6 +1359,22 @@ canvas.addEventListener('pointerdown', (e) => {
     const pos = getPointerPos(e); 
     const snapPos = snapTarget || pos;
     currentMousePos = pos; // Mobil için konum bilgisini güncelle
+
+    // --- AVUÇ İÇİ REDDİ (PALM REJECTION) KONTROLÜ ---
+    const currentPointer = getPointerInfo(e);
+    
+    if (currentPointer.type === 'pen') {
+        isPenActive = true;
+        clearTimeout(penActiveTimer);
+        // Kalem kalktıktan sonra 1 saniye daha elleri reddetmeye devam et
+        penActiveTimer = setTimeout(() => { isPenActive = false; }, 1000); 
+    } else if (currentPointer.type === 'touch' && isPenActive) {
+        // Kalem kullanılıyorken ekrana el/avuç içi değerse işlemi İPTAL ET
+        console.log("Avuç içi reddedildi.");
+        return; 
+    }
+    // -----------------------------------------------
+
 
     // --- 1. FİZİKSEL ARAÇ KONTROLÜ ---
     const isToolElementClicked = e.target.closest('.ruler-container, .gonye-container, .aciolcer-container, #compass-container');
@@ -1296,7 +1393,7 @@ canvas.addEventListener('pointerdown', (e) => {
         
         if (hit) {
 
-// Seçilen nesneyi en üste taşı (Z-Index mantığı)
+        // Seçilen nesneyi en üste taşı (Z-Index mantığı)
         drawnStrokes = drawnStrokes.filter(s => s !== hit.item);
         drawnStrokes.push(hit.item);
         window.drawnStrokes = drawnStrokes;
@@ -1325,7 +1422,7 @@ canvas.addEventListener('pointerdown', (e) => {
             } else if (hit.pointKey === 'rotate' || hit.pointKey === 'resize' || hit.pointKey === 'image_resize') {
                 originalStartPos = { radius: hit.item.radius, rotation: hit.item.rotation };
 
-// --- TABLET İÇİN KRİTİK EKLEME ---
+                // --- TABLET İÇİN KRİTİK EKLEME ---
                 if (selectedItem.type === 'rectangle') {
                     initialWidth = selectedItem.width;
                     initialHeight = selectedItem.height;
@@ -1378,8 +1475,19 @@ canvas.addEventListener('pointerdown', (e) => {
     switch (currentTool) {
         case 'pen':
             isDrawing = true; 
-            drawnStrokes.push({ type: 'pen', path: [snapPos], color: currentPenColor, width: currentPenWidth });
+            // YENİ: Kalemin basıncını al
+            const pInfoDown = getPointerInfo(e);
+            const pressureDown = pInfoDown.type === 'pen' ? pInfoDown.pressure : 1;
+            
+            // YENİ: Basınç değerini (p) koordinatla birlikte kaydet
+            drawnStrokes.push({ 
+                type: 'pen', 
+                path: [{x: snapPos.x, y: snapPos.y, p: pressureDown}], 
+                color: currentPenColor, 
+                baseWidth: currentPenWidth 
+            });
             break;
+
         case 'point':
             isDrawing = false; 
             drawnStrokes.push({ type: 'point', x: snapPos.x, y: snapPos.y, label: nextPointChar });
@@ -1402,7 +1510,7 @@ canvas.addEventListener('pointerdown', (e) => {
             if (!isDrawingRay) { isDrawingRay = true; lineStartPoint = pos; }
             break;
 
-case 'draw_rectangle':
+        case 'draw_rectangle':
             // Şartı (!isDrawingRectangle) kaldırıyoruz; direkt başlatıyoruz.
             isDrawingRectangle = true; 
             rectStartPoint = pos; 
@@ -1432,28 +1540,72 @@ case 'draw_rectangle':
     }
 }, { passive: false });
 
-
 canvas.addEventListener('pointermove', (e) => {
+
+// PARDUS KORUMASI: Sürükleme sırasında tarayıcının araya girmesini kesin engelle
+    if (e.cancelable) e.preventDefault();
+
+// --- AVUÇ İÇİ REDDİ (SÜREKLİ GÜNCELLEME) ---
+    const currentPointerMove = getPointerInfo(e);
+    
+    // Eğer kalem ekrana değiyorsa VEYA havadan ekranın üzerinde geziniyorsa (hover)
+    if (currentPointerMove.type === 'pen') {
+        isPenActive = true;
+        clearTimeout(penActiveTimer); // Eski sayacı iptal et
+        
+        // Kalem tamamen uzaklaşana kadar bu 1 saniye ASLA bitmez
+        penActiveTimer = setTimeout(() => { isPenActive = false; }, 1000); 
+    } 
+    // Kalem aktifken (veya uzaklaşalı henüz 1 saniye olmamışken) bir el/parmak değerse REDDET
+    else if (currentPointerMove.type === 'touch' && isPenActive) {
+        return; // İşlemi anında iptal et, aşağıdaki kodları hiç okuma!
+    }
+
+    // -------------------------------------------
+
+// --- PARDUS ÇİFT SİNYAL ENGELLEYİCİ ---
+    if (e.pointerType === 'mouse') {
+        let hasTouch = false;
+        for (let p of pointers.values()) {
+            if (p.pointerType === 'touch' || p.pointerType === 'pen') hasTouch = true;
+        }
+        if (hasTouch) return; // Hayalet farenin hareket etmesini engelle!
+    }
+
+    // --------------------------------------
+
+
     // --- YENİ: PARMAK TAKİBİ VE ZOOM ---
     pointers.set(e.pointerId, e); // Her zaman parmağı kaydet
 
    // --- TABLET: İKİ PARMAK ZOOM (SADECE RESİM/PDF BÜYÜR) ---
-    if (pointers.size === 2) {
-        const p = Array.from(pointers.values());
-        const currentDist = Math.hypot(p[0].clientX - p[1].clientX, p[0].clientY - p[1].clientY);
+    // --- PARDUS VE TABLET: İKİ PARMAK ZOOM (SADECE RESİM/PDF BÜYÜR) ---
+    if (pointers.size === 2 || (e.touches && e.touches.length === 2)) {
+        let p1x, p1y, p2x, p2y;
+        
+        // Pardus gibi parmakları e.touches içine paketleyen sistemler için
+        if (e.touches && e.touches.length === 2) {
+            p1x = e.touches[0].clientX; p1y = e.touches[0].clientY;
+            p2x = e.touches[1].clientX; p2y = e.touches[1].clientY;
+        } else {
+            // Standart modern tablet ve PC'ler için
+            const p = Array.from(pointers.values());
+            p1x = p[0].clientX; p1y = p[0].clientY;
+            p2x = p[1].clientX; p2y = p[1].clientY;
+        }
+
+        const currentDist = Math.hypot(p1x - p2x, p1y - p2y);
 
         if (lastDist > 0) {
             const delta = currentDist - lastDist;
             const zoomSpeed = 0.003; 
             const zoomStep = 1 + (delta * zoomSpeed);
 
-            // SADECE ARKA PLANI (PDF/RESİM) BUL VE BÜYÜT/KÜÇÜLT
             const bgStrokes = drawnStrokes.filter(s => s.isBackground === true);
             if (bgStrokes.length > 0) {
                 bgStrokes.forEach(bg => {
                     const newW = bg.width * zoomStep;
                     const newH = bg.height * zoomStep;
-                    // Merkezden büyütmek için x ve y koordinatlarını da kaydır
                     bg.x = bg.x - (newW - bg.width) / 2;
                     bg.y = bg.y - (newH - bg.height) / 2;
                     bg.width = newW;
@@ -1467,7 +1619,9 @@ canvas.addEventListener('pointermove', (e) => {
     }
 
    // 1. GÜVENLİK: Tek parmaklı işlemlerde sadece ana dokunuşu takip et
-    if (!e.isPrimary) return; 
+    // 1. GÜVENLİK (Pardus Yaması): Pardus isPrimary değerini tanımsız (undefined) gönderebilir.
+    // 1. GÜVENLİK (Pardus Yaması 2.0): Sadece ekranda birden fazla parmak varsa ana parmağı dikkate al.
+    if (pointers.size > 1 && e.isPrimary === false) return; 
 
     // KOORDİNATLARI AL VE SİSTEME KAYDET (Canlandır ve diğer araçlar için şart)
     const pos = getPointerPos(e); 
@@ -1741,7 +1895,12 @@ canvas.addEventListener('pointermove', (e) => {
     if (!isDrawing) return;
 
     if (currentTool === 'pen') {
-        drawnStrokes[drawnStrokes.length - 1].path.push(pos);
+        // YENİ: Hareket halindeki basıncı al
+        const pInfoMove = getPointerInfo(e);
+        const pressureMove = pInfoMove.type === 'pen' ? pInfoMove.pressure : 1;
+
+        // YENİ: Yeni noktayı ve o anki basıncı (p) yola ekle
+        drawnStrokes[drawnStrokes.length - 1].path.push({x: pos.x, y: pos.y, p: pressureMove});
         redrawAllStrokes();
     } 
    else if (currentTool === 'eraser') {
@@ -1846,9 +2005,20 @@ canvas.addEventListener('pointermove', (e) => {
 
 
 canvas.addEventListener('pointerup', (e) => {
-    // 1. Tarayıcı kilitlerini kaldır ve standart hareketleri engelle
-    canvas.releasePointerCapture(e.pointerId);
+    // 1. Tarayıcı kilitlerini kaldır (Pardus Korumalı)
+   
     if (e.pointerType === 'touch' && e.cancelable) e.preventDefault();
+
+// --- PARDUS ÇİFT SİNYAL ENGELLEYİCİ ---
+    if (e.pointerType === 'mouse') {
+        let hasTouch = false;
+        for (let p of pointers.values()) {
+            if (p.pointerType === 'touch' || p.pointerType === 'pen') hasTouch = true;
+        }
+        if (hasTouch) return; // Hayalet fare kalkış yapmasın
+    }
+    // --------------------------------------
+
 
 // --- BUNLARI EKLE: Kalkan parmağı sil ve zoom'u sıfırla ---
     pointers.delete(e.pointerId); 
